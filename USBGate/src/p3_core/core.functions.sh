@@ -13,9 +13,14 @@ LOG_FILE="${LOG_DIR}/history.log"
 
 MOUNT_POINT="/mnt/usbgate"
 
+RESULT_FILE="/tmp/usbgate_results.tmp"
+LOCK_FILE="/tmp/usbgate.lock"
+
 COUNT_SAFE=0
 COUNT_MEDIUM=0
 COUNT_HIGH=0
+
+MAX_WORKERS=4
 
 # ============================================================
 #  CODES D'ERREUR
@@ -26,24 +31,20 @@ E_LOG_FAILED=105
 
 # ============================================================
 #  init_log()
-#  Initialise le systeme de logs
 # ============================================================
 
 init_log() {
 
-    # Utiliser dossier custom si defini via -l
     if [[ -n "${CUSTOM_LOG_DIR}" ]]; then
         LOG_DIR="${CUSTOM_LOG_DIR}"
         LOG_FILE="${LOG_DIR}/history.log"
     fi
 
-    # Creation dossier logs
     mkdir -p "${LOG_DIR}" 2>/dev/null || {
         echo "[ERROR] Impossible de creer le dossier logs" >&2
         exit ${E_LOG_FAILED}
     }
 
-    # Creation fichier log
     touch "${LOG_FILE}" 2>/dev/null || {
         echo "[ERROR] Impossible de creer le fichier log" >&2
         exit ${E_LOG_FAILED}
@@ -52,30 +53,28 @@ init_log() {
 
 # ============================================================
 #  log_info()
-#  Affiche INFO terminal + fichier
 # ============================================================
 
 log_info() {
 
     local ts
-    ts=$(date '+%Y-%m-%d-%H-%M-%S')
+    ts=$(date '+%Y-%m-%d %H:%M:%S')
 
     local user
     user=$(whoami)
 
-    echo "${ts} : ${user} : INFOS : $*" \
+    echo "${ts} : ${user} : INFO : $*" \
         | tee -a "${LOG_FILE}"
 }
 
 # ============================================================
 #  log_error()
-#  Affiche ERROR terminal + fichier
 # ============================================================
 
 log_error() {
 
     local ts
-    ts=$(date '+%Y-%m-%d-%H-%M-%S')
+    ts=$(date '+%Y-%m-%d %H:%M:%S')
 
     local user
     user=$(whoami)
@@ -86,7 +85,6 @@ log_error() {
 
 # ============================================================
 #  mount_usb()
-#  Monte la cle USB en lecture seule
 # ============================================================
 
 mount_usb() {
@@ -97,11 +95,11 @@ mount_usb() {
 
     if mount -o ro "${device}" "${MOUNT_POINT}" 2>/dev/null; then
 
-        log_info "Montage reussi en lecture seule : ${MOUNT_POINT}"
+        log_info "Montage reussi : ${MOUNT_POINT}"
 
     else
 
-        log_error "Echec du montage de ${device}"
+        log_error "Echec du montage : ${device}"
         exit ${E_MOUNT_FAILED}
 
     fi
@@ -109,29 +107,42 @@ mount_usb() {
 
 # ============================================================
 #  unmount_usb()
-#  Demonte proprement la cle USB
 # ============================================================
 
 unmount_usb() {
 
     if mountpoint -q "${MOUNT_POINT}" 2>/dev/null; then
 
-        umount "${MOUNT_POINT}"
+        umount "${MOUNT_POINT}" 2>/dev/null
 
         rmdir "${MOUNT_POINT}" 2>/dev/null
 
-        log_info "Cle USB demontee proprement"
+        log_info "Cle USB demontee"
 
     else
 
-        log_info "Aucun montage actif detecte"
+        log_info "Aucun montage actif"
 
     fi
 }
 
 # ============================================================
+#  save_result()
+#  Protection contre race condition
+# ============================================================
+
+save_result() {
+
+    local risk="$1"
+
+    {
+        flock -x 200
+        echo "${risk}" >> "${RESULT_FILE}"
+    } 200>"${LOCK_FILE}"
+}
+
+# ============================================================
 #  scan_file()
-#  Scan d'un seul fichier
 # ============================================================
 
 scan_file() {
@@ -148,28 +159,40 @@ scan_file() {
 
     log_info "Scanne : ${filename} -> ${risk}"
 
-    echo "${risk}" >> /tmp/usbgate_results.tmp
+    save_result "${risk}"
+}
+
+# ============================================================
+#  worker_pool_wait()
+#  Limite nombre jobs paralleles
+# ============================================================
+
+worker_pool_wait() {
+
+    while (( $(jobs -r | wc -l) >= MAX_WORKERS )); do
+        sleep 0.1
+    done
 }
 
 # ============================================================
 #  scan_all_files()
-#  Scan complet avec plusieurs modes d'execution
 # ============================================================
 
 scan_all_files() {
 
     local dir="$1"
-
     local mode="${2:-normal}"
 
-    rm -f /tmp/usbgate_results.tmp
+    rm -f "${RESULT_FILE}" "${LOCK_FILE}"
 
-    touch /tmp/usbgate_results.tmp
+    touch "${RESULT_FILE}"
 
-    # Recuperation de tous les fichiers
-    mapfile -t files < <(find "${dir}" -type f 2>/dev/null)
+    mapfile -t files < <(
+        find "${dir}" -type f 2>/dev/null
+    )
 
-    log_info "Scan mode : ${mode} | Fichiers : ${#files[@]}"
+    log_info "Mode scan : ${mode}"
+    log_info "Fichiers detectes : ${#files[@]}"
 
     case "${mode}" in
 
@@ -192,9 +215,7 @@ scan_all_files() {
         fork)
 
             for f in "${files[@]}"; do
-                (
-                    scan_file "${f}"
-                ) &
+                scan_file "${f}" &
             done
 
             wait
@@ -207,19 +228,11 @@ scan_all_files() {
 
         thread)
 
-            local job_count=0
-
             for f in "${files[@]}"; do
 
+                worker_pool_wait
+
                 scan_file "${f}" &
-
-                ((job_count++))
-
-                # Pool de 4 jobs max
-                if (( job_count >= 4 )); then
-                    wait
-                    job_count=0
-                fi
 
             done
 
@@ -247,7 +260,7 @@ scan_all_files() {
 
         *)
 
-            log_error "Mode de scan inconnu : ${mode}"
+            log_error "Mode invalide : ${mode}"
             return 1
 
         ;;
@@ -255,15 +268,18 @@ scan_all_files() {
     esac
 
     # ========================================================
-    #  CALCUL DES RESULTATS
+    #  RESULTATS
     # ========================================================
 
-    COUNT_SAFE=$(grep -c "^SAFE$" /tmp/usbgate_results.tmp 2>/dev/null || echo 0)
+    COUNT_SAFE=$(grep -c "^SAFE$" "${RESULT_FILE}" 2>/dev/null || echo 0)
 
-    COUNT_MEDIUM=$(grep -c "^MEDIUM$" /tmp/usbgate_results.tmp 2>/dev/null || echo 0)
+    COUNT_MEDIUM=$(grep -c "^MEDIUM$" "${RESULT_FILE}" 2>/dev/null || echo 0)
 
-    COUNT_HIGH=$(grep -c "^HIGH$" /tmp/usbgate_results.tmp 2>/dev/null || echo 0)
+    COUNT_HIGH=$(grep -c "^HIGH$" "${RESULT_FILE}" 2>/dev/null || echo 0)
 
-    log_info "Resultats -> SAFE=${COUNT_SAFE} MEDIUM=${COUNT_MEDIUM} HIGH=${COUNT_HIGH}"
+    log_info "========================================"
+    log_info "SAFE   : ${COUNT_SAFE}"
+    log_info "MEDIUM : ${COUNT_MEDIUM}"
+    log_info "HIGH   : ${COUNT_HIGH}"
+    log_info "========================================"
 }
-
