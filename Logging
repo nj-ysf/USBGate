@@ -1,0 +1,251 @@
+// ============================================================
+//  P3 — LOGGING (init_log, log_info, log_error)
+// ============================================================
+
+// Variables globales nécessaires
+char LOG_DIR[512];
+char LOG_FILE[512];
+char CUSTOM_LOG_DIR[512];
+
+void init_log() {
+    // Si CUSTOM_LOG_DIR est definie (option -l)
+    if (strlen(CUSTOM_LOG_DIR) > 0) {
+        strcpy(LOG_DIR, CUSTOM_LOG_DIR);
+        snprintf(LOG_FILE, sizeof(LOG_FILE), "%s/history.log", LOG_DIR);
+    } else {
+        strcpy(LOG_DIR, "/var/log/usbgate");
+        snprintf(LOG_FILE, sizeof(LOG_FILE), "/var/log/usbgate/history.log");
+    }
+    
+    // Creer le dossier avec mkdir -p
+    char cmd[1024];
+    snprintf(cmd, sizeof(cmd), "mkdir -p %s 2>/dev/null", LOG_DIR);
+    if (system(cmd) != 0) {
+        fprintf(stderr, "Erreur: Impossible de creer le dossier %s\n", LOG_DIR);
+        exit(105);
+    }
+    
+    // Creer le fichier avec touch
+    FILE *f = fopen(LOG_FILE, "a");
+    if (!f) {
+        fprintf(stderr, "Erreur: Impossible de creer le fichier %s\n", LOG_FILE);
+        exit(105);
+    }
+    fclose(f);
+}
+
+void log_info(const char *message) {
+    char timestamp[64];
+    time_t now = time(NULL);
+    struct tm *tm_info = localtime(&now);
+    strftime(timestamp, sizeof(timestamp), "%Y-%m-%d-%H-%M-%S", tm_info);
+    
+    char *user = getenv("USER");
+    if (!user) user = "unknown";
+    
+    char ligne[1024];
+    snprintf(ligne, sizeof(ligne), "%s : %s : INFOS : %s\n", timestamp, user, message);
+    
+    // tee -a: afficher ET ecrire dans le fichier
+    printf("%s", ligne);
+    
+    FILE *log = fopen(LOG_FILE, "a");
+    if (log) {
+        fprintf(log, "%s", ligne);
+        fclose(log);
+    }
+}
+
+void log_error(const char *message) {
+    char timestamp[64];
+    time_t now = time(NULL);
+    struct tm *tm_info = localtime(&now);
+    strftime(timestamp, sizeof(timestamp), "%Y-%m-%d-%H-%M-%S", tm_info);
+    
+    char *user = getenv("USER");
+    if (!user) user = "unknown";
+    
+    char ligne[1024];
+    snprintf(ligne, sizeof(ligne), "%s : %s : ERROR : %s\n", timestamp, user, message);
+    
+    // tee -a: afficher sur stderr ET ecrire dans le fichier
+    fprintf(stderr, "%s", ligne);
+    
+    FILE *log = fopen(LOG_FILE, "a");
+    if (log) {
+        fprintf(log, "%s", ligne);
+        fclose(log);
+    }
+}
+
+// ============================================================
+//  P3 — MOUNT / UNMOUNT
+// ============================================================
+
+#define MOUNT_POINT "/mnt/usbgate"
+
+void mount_usb(const char *device) {
+    // Creer le point de montage
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd), "mkdir -p %s", MOUNT_POINT);
+    system(cmd);
+    
+    // Monter en lecture seule (-o ro)
+    snprintf(cmd, sizeof(cmd), "mount -o ro %s %s 2>/dev/null", device, MOUNT_POINT);
+    if (system(cmd) == 0) {
+        log_info("Montage reussi en lecture seule");
+    } else {
+        log_error("Echec du montage de la cle USB");
+        exit(103);
+    }
+}
+
+void unmount_usb() {
+    // Verifier si monte (mountpoint -q)
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd), "mountpoint -q %s", MOUNT_POINT);
+    
+    if (system(cmd) == 0) {
+        snprintf(cmd, sizeof(cmd), "umount %s", MOUNT_POINT);
+        system(cmd);
+        
+        snprintf(cmd, sizeof(cmd), "rmdir %s 2>/dev/null", MOUNT_POINT);
+        system(cmd);
+        
+        log_info("Cle USB demontee proprement");
+    }
+}
+
+// ============================================================
+//  P3 — SCAN ENGINE (scan_file, scan_all_files)
+// ============================================================
+
+#define TMP_RESULTS "/tmp/usbgate_results.tmp"
+
+// Declaration de classify_file (venant de P1)
+extern const char* classify_file(const char *filepath);
+extern void print_risk(const char *risk, const char *filename);
+
+void scan_file(const char *filepath) {
+    const char *risk = classify_file(filepath);
+    char *filename = strdup(basename((char*)filepath));
+    
+    print_risk(risk, filename);
+    
+    char logmsg[512];
+    snprintf(logmsg, sizeof(logmsg), "Scanne : %s -> %s", filename, risk);
+    log_info(logmsg);
+    
+    // Ecrire dans le fichier temporaire
+    FILE *tmp = fopen(TMP_RESULTS, "a");
+    if (tmp) {
+        fprintf(tmp, "%s\n", risk);
+        fclose(tmp);
+    }
+    
+    free(filename);
+}
+
+void scan_all_files(const char *dir, const char *mode) {
+    // Vider le fichier temporaire
+    remove(TMP_RESULTS);
+    
+    // Collecter tous les fichiers avec find (pipe)
+    char cmd[1024];
+    snprintf(cmd, sizeof(cmd), "find %s -type f 2>/dev/null", dir);
+    FILE *find = popen(cmd, "r");
+    
+    char files[10000][512];
+    int count = 0;
+    
+    while (fgets(files[count], sizeof(files[0]), find) && count < 10000) {
+        files[count][strcspn(files[count], "\n")] = 0; // Enlever le \n
+        count++;
+    }
+    pclose(find);
+    
+    char logmsg[512];
+    snprintf(logmsg, sizeof(logmsg), "Scan mode : %s | Fichiers : %d", mode, count);
+    log_info(logmsg);
+    
+    // ============================================================
+    //  MODE NORMAL (sequentiel)
+    // ============================================================
+    if (strcmp(mode, "normal") == 0) {
+        for (int i = 0; i < count; i++) {
+            scan_file(files[i]);
+        }
+    }
+    
+    // ============================================================
+    //  MODE FORK (processus fils)
+    // ============================================================
+    else if (strcmp(mode, "fork") == 0) {
+        for (int i = 0; i < count; i++) {
+            if (fork() == 0) {
+                scan_file(files[i]);
+                exit(0);
+            }
+        }
+        // Attendre tous les fils
+        while (wait(NULL) > 0);
+    }
+    
+    // ============================================================
+    //  MODE THREAD (jobs paralleles - pool de 4)
+    // ============================================================
+    else if (strcmp(mode, "thread") == 0) {
+        int job_count = 0;
+        for (int i = 0; i < count; i++) {
+            if (fork() == 0) {
+                scan_file(files[i]);
+                exit(0);
+            }
+            job_count++;
+            if (job_count >= 4) {
+                while (wait(NULL) > 0);
+                job_count = 0;
+            }
+        }
+        while (wait(NULL) > 0);
+    }
+    
+    // ============================================================
+    //  MODE SUBSHELL (sous-shell)
+    // ============================================================
+    else if (strcmp(mode, "subshell") == 0) {
+        if (fork() == 0) {
+            // Sous-shell: tous les scans dans un processus fils
+            for (int i = 0; i < count; i++) {
+                scan_file(files[i]);
+            }
+            exit(0);
+        }
+        wait(NULL);
+    }
+    
+    // Compter les resultats (grep -c)
+    char safe_cmd[256], medium_cmd[256], high_cmd[256];
+    snprintf(safe_cmd, sizeof(safe_cmd), "grep -c '^SAFE$' %s 2>/dev/null || echo 0", TMP_RESULTS);
+    snprintf(medium_cmd, sizeof(medium_cmd), "grep -c '^MEDIUM$' %s 2>/dev/null || echo 0", TMP_RESULTS);
+    snprintf(high_cmd, sizeof(high_cmd), "grep -c '^HIGH$' %s 2>/dev/null || echo 0", TMP_RESULTS);
+    
+    FILE *fp;
+    int COUNT_SAFE, COUNT_MEDIUM, COUNT_HIGH;
+    
+    fp = popen(safe_cmd, "r");
+    fscanf(fp, "%d", &COUNT_SAFE);
+    pclose(fp);
+    
+    fp = popen(medium_cmd, "r");
+    fscanf(fp, "%d", &COUNT_MEDIUM);
+    pclose(fp);
+    
+    fp = popen(high_cmd, "r");
+    fscanf(fp, "%d", &COUNT_HIGH);
+    pclose(fp);
+    
+    snprintf(logmsg, sizeof(logmsg), "Resultats -> SAFE=%d MEDIUM=%d HIGH=%d", 
+             COUNT_SAFE, COUNT_MEDIUM, COUNT_HIGH);
+    log_info(logmsg);
+}
