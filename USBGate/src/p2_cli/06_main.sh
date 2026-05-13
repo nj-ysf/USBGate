@@ -84,48 +84,44 @@ main() {
         exit ${E_OK}
     fi
 
-    # --- 4. Verifier les droits root pour toute autre action ---
-    require_root
-
-    # --- 5. Afficher la banniere apres validation ---
+    # --- 4. Afficher la banniere apres validation ---
     print_banner
 
-    # --- 6. Auto-detection si l'utilisateur a tape "auto" ---
-   # --- 6. Auto-detection si l'utilisateur a tape "auto" ---
+    # --- 5. Auto-detection si l'utilisateur a tape "auto" ---
     if [[ "${USB_DEVICE}" == "auto" ]]; then
         auto_detect_device    # met a jour la variable globale USB_DEVICE
     fi
 
-    # --- 7. Verifier que le peripherique est bien un block device ---
+    # --- 6. Verifier que le peripherique est bien un block device ---
     if [[ ! -b "${USB_DEVICE}" ]]; then
         log_error "Peripherique introuvable ou invalide : ${USB_DEVICE}"
         show_help
         exit ${E_NO_DEVICE}
     fi
 
-    # --- 8. Monter en lecture seule (P3) ---
+    # --- 7. Monter en lecture seule (P3) ---
     mount_usb "${USB_DEVICE}"
 
-    # --- 9. Filet de securite : demonter automatiquement a la sortie,
+    # --- 8. Filet de securite : demonter automatiquement a la sortie,
     #        meme en cas de Ctrl+C ou d'erreur (trap sur EXIT) ---
     trap 'unmount_usb' EXIT
 
-    # --- 10. Scan antivirus ClamAV (P1) ---
+    # --- 9. Scan antivirus ClamAV (P1) ---
     scan_with_clamav
 
-    # --- 11. Si virus detecte, bloquer l'import ---
+    # --- 10. Si virus detecte, bloquer l'import ---
     if [[ "${VIRUS_FOUND}" == true ]]; then
         log_error "VIRUS detecte sur la cle - import bloque"
         exit ${E_OK}
     fi
 
-    # --- 12. Scan heuristique de tous les fichiers (P3) ---
+    # --- 11. Scan heuristique de tous les fichiers (P3) ---
     scan_all_files "${MOUNT_POINT}" "$(get_scan_mode)"
 
-    # --- 13. Afficher le resume SAFE/MEDIUM/HIGH (P4) ---
+    # --- 12. Afficher le resume SAFE/MEDIUM/HIGH (P4) ---
     show_summary
 
-    # --- 14. Menu interactif : import / rapport / quitter (P4) ---
+    # --- 13. Menu interactif : import / rapport / quitter (P4) ---
     interactive_menu
 }
 
