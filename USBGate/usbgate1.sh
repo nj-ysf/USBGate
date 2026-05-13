@@ -1,16 +1,12 @@
 #!/usr/bin/env bash
 # ============================================================
-#  USBGate — Point d'entree principal
-#  Usage : sudo ./usbgate.sh [options] <device|auto>
+#  USBGate - Point d'entree principal
+#  Usage : ./usbgate1.sh [options] <device|auto>
 # ============================================================
 
 # Chemin absolu — compatible WSL, sudo, et liens symboliques
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SRC_DIR="${SCRIPT_DIR}/src"
-
-# Debug : afficher les chemins resolus (supprimer apres verification)
-echo "SCRIPT_DIR = ${SCRIPT_DIR}"
-echo "SRC_DIR    = ${SRC_DIR}"
 
 # ============================================================
 #  VARIABLES GLOBALES PARTAGEES
@@ -72,7 +68,7 @@ for m in "${MODULES[@]}"; do
         echo "[FATAL] Fichier manquant : ${m}" >&2
         all_ok=false
     else
-        echo "[OK]    ${m}"
+        :
     fi
 done
 
