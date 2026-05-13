@@ -131,6 +131,9 @@ main() {
 
 # ============================================================
 #  POINT D'ENTREE
-#  Le "$@" passe TOUS les arguments du script a main().
+#  Lance main() seulement si ce fichier est execute directement.
+#  Quand il est source par usbgate1.sh, usbgate1.sh appelle main "$@".
 # ============================================================
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi

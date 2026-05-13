@@ -33,50 +33,64 @@ fi
 #  parse_args() - cœur du parsing CLI
 # ============================================================
 parse_args() {
-    # Reinitialiser OPTIND a chaque appel (important si on appelle 2x)
-    OPTIND=1
+    OPT_FORK=false
+    OPT_THREAD=false
+    OPT_SUBSHELL=false
+    OPT_RESTORE=false
+    CUSTOM_LOG_DIR=""
+    USB_DEVICE=""
 
-    # ":hftsl:r"
-    #   ":" en debut  -> on gere les erreurs nous-memes (pas de message bash)
-    #   "l:"          -> -l attend un argument (stocke dans $OPTARG)
-    while getopts ":hftsl:r" opt; do
-        case "${opt}" in
-            h) show_help; exit ${E_OK} ;;
-            f) OPT_FORK=true     ;;
-            t) OPT_THREAD=true   ;;
-            s) OPT_SUBSHELL=true ;;
-            l) CUSTOM_LOG_DIR="${OPTARG}" ;;
-            r) OPT_RESTORE=true  ;;
-
-            # Option inconnue -> -z, -x, etc.
-            \?)
-                log_error "Option inconnue : -${OPTARG}"
+    while (($#)); do
+        case "$1" in
+            -h)
+                show_help
+                exit ${E_OK}
+                ;;
+            -f)
+                OPT_FORK=true
+                ;;
+            -t)
+                OPT_THREAD=true
+                ;;
+            -s)
+                OPT_SUBSHELL=true
+                ;;
+            -r)
+                OPT_RESTORE=true
+                ;;
+            -l)
+                if [[ -z "${2:-}" || "${2}" == -* ]]; then
+                    log_error "Option -l necessite un argument"
+                    show_help
+                    exit ${E_BAD_OPTION}
+                fi
+                CUSTOM_LOG_DIR="$2"
+                shift
+                ;;
+            -*)
+                log_error "Option inconnue : $1"
                 show_help
                 exit ${E_BAD_OPTION}
                 ;;
-
-            # Option qui manque son argument -> ex: -l sans dossier
-            :)
-                log_error "Option -${OPTARG} necessite un argument"
-                show_help
-                exit ${E_BAD_OPTION}
+            *)
+                if [[ -n "${USB_DEVICE}" ]]; then
+                    log_error "Parametre inattendu : $1"
+                    show_help
+                    exit ${E_BAD_OPTION}
+                fi
+                USB_DEVICE="$1"
                 ;;
         esac
+        shift
     done
-
-    # Avancer apres les options pour acceder au parametre positionnel
-    # ex: "./script.sh -f /dev/sdb1"  =>  apres shift, $1 = "/dev/sdb1"
-    shift $((OPTIND - 1))
 
     # Verifier le parametre obligatoire <device|auto>
     # Sauf si -r : restore n'a pas besoin de device
-    if [[ -z "$1" && "${OPT_RESTORE}" == false ]]; then
+    if [[ -z "${USB_DEVICE}" && "${OPT_RESTORE}" == false ]]; then
         log_error "Parametre obligatoire manquant : <device|auto>"
         show_help
         exit ${E_MISSING_PARAM}
     fi
-
-    USB_DEVICE="$1"
 }
 
 # ============================================================

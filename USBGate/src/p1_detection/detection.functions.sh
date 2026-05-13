@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 
-log_info() {
-    echo "[INFO] $1"
-}
+if ! declare -F log_info >/dev/null; then
+    log_info() {
+        echo "[INFO] $1"
+    }
+fi
 
-log_error() {
-    echo "[ERROR] $1"
-}
+if ! declare -F log_error >/dev/null; then
+    log_error() {
+        echo "[ERROR] $1"
+    }
+fi
 
 classify_file() {
     filepath="$1"
