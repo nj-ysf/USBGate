@@ -2,70 +2,9 @@
 # ============================================================
 #  USBGate - P2 - Function 06 : main()
 #  Orchestre tout le script dans l'ordre du cahier des charges.
-#  C'est le seul "point d'entree" appele a la fin du fichier.
+#  Ce module definit main().
+#  Le seul point d'entree du projet est usbgate1.sh.
 # ============================================================
-
-# ---------- VARIABLES GLOBALES ----------
-USB_DEVICE=""
-MOUNT_POINT="/tmp/usbgate_mount"
-LOG_DIR="/var/log/usbgate"
-LOG_FILE="${LOG_DIR}/history.log"
-CUSTOM_LOG_DIR=""
-SAFE_DEST="${HOME}/Downloads/SecureImport"
-
-# ---------- DRAPEAUX D'OPTIONS ----------
-OPT_FORK=false
-OPT_THREAD=false
-OPT_SUBSHELL=false
-OPT_RESTORE=false
-
-# ---------- COMPTEURS & ETAT ----------
-COUNT_SAFE=0
-COUNT_MEDIUM=0
-COUNT_HIGH=0
-VIRUS_FOUND=false
-
-# ---------- CODES D'ERREUR ----------
-E_OK=0
-E_BAD_OPTION=100
-E_MISSING_PARAM=101
-E_NOT_ROOT=102
-E_MOUNT_FAIL=103
-E_NO_DEVICE=104
-E_LOG_FAIL=105
-E_RESTORE_DENIED=106
-
-# ============================================================
-#  STUBS - remplaces le Jour 3 par les vraies fonctions
-#  des autres personnes (P1, P3, P4) + tes propres fonctions.
-# ============================================================
-if ! declare -F log_info          >/dev/null; then log_info()          { echo "$(date '+%Y-%m-%d-%H-%M-%S') : $(whoami) : INFOS : $*"; }; fi
-if ! declare -F log_error         >/dev/null; then log_error()         { echo "$(date '+%Y-%m-%d-%H-%M-%S') : $(whoami) : ERROR : $*" >&2; }; fi
-if ! declare -F init_log          >/dev/null; then init_log()          { mkdir -p "${LOG_DIR}" 2>/dev/null && touch "${LOG_FILE}" 2>/dev/null; }; fi
-if ! declare -F show_help         >/dev/null; then show_help()         { echo "[stub show_help]"; }; fi
-if ! declare -F parse_args        >/dev/null; then parse_args()        { USB_DEVICE="${1:-auto}"; }; fi
-if ! declare -F require_root      >/dev/null; then require_root()      { [[ $(id -u) -eq 0 ]] || { log_error "Root requis"; exit 102; }; }; fi
-if ! declare -F print_banner      >/dev/null; then print_banner()      { echo "===== USBGate v1.0 ====="; }; fi
-if ! declare -F auto_detect_device>/dev/null; then auto_detect_device(){ echo "/dev/loop0"; }; fi
-if ! declare -F mount_usb         >/dev/null; then mount_usb()         { log_info "[stub] mount_usb $1"; }; fi
-if ! declare -F unmount_usb       >/dev/null; then unmount_usb()       { log_info "[stub] unmount_usb"; }; fi
-if ! declare -F scan_with_clamav  >/dev/null; then scan_with_clamav()  { log_info "[stub] scan_with_clamav"; }; fi
-if ! declare -F scan_all_files    >/dev/null; then scan_all_files()    { log_info "[stub] scan_all_files dir=$1 mode=$2"; }; fi
-if ! declare -F show_summary      >/dev/null; then show_summary()      { log_info "[stub] show_summary"; }; fi
-if ! declare -F interactive_menu  >/dev/null; then interactive_menu()  { log_info "[stub] interactive_menu"; }; fi
-if ! declare -F restore_defaults  >/dev/null; then restore_defaults()  { log_info "[stub] restore_defaults"; }; fi
-
-# ============================================================
-#  Helper - get_scan_mode()
-#  Convertit les drapeaux booleens en une chaine de mode.
-# ============================================================
-get_scan_mode() {
-    if   [[ "${OPT_FORK}"     == true ]]; then echo "fork"
-    elif [[ "${OPT_THREAD}"   == true ]]; then echo "thread"
-    elif [[ "${OPT_SUBSHELL}" == true ]]; then echo "subshell"
-    else                                        echo "normal"
-    fi
-}
 
 # ============================================================
 #  main() - le chef d'orchestre
@@ -124,12 +63,3 @@ main() {
     # --- 13. Menu interactif : import / rapport / quitter (P4) ---
     interactive_menu
 }
-
-# ============================================================
-#  POINT D'ENTREE
-#  Lance main() seulement si ce fichier est execute directement.
-#  Quand il est source par usbgate1.sh, usbgate1.sh appelle main "$@".
-# ============================================================
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    main "$@"
-fi

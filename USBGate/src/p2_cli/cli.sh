@@ -433,8 +433,6 @@ main() {
 }
 
 # ============================================================
-#  POINT D'ENTREE
-#  Le "$@" passe TOUS les arguments du script a main().
+#  MODULE SEULEMENT
+#  Le seul point d'entree du projet est ../../usbgate1.sh.
 # ============================================================
-main "$@"
-main "$@"

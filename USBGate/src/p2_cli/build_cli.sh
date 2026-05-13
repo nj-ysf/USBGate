@@ -40,8 +40,5 @@ for f in 01_show_help.sh \
     echo "" >> "${OUT}"
 done
 
-# Ajouter la ligne d'execution finale
-echo 'main "$@"' >> "${OUT}"
-
 chmod +x "${OUT}"
-echo "✓ ${OUT} genere ($(wc -l < "${OUT}") lignes)"
+echo "✓ ${OUT} genere comme module ($(wc -l < "${OUT}") lignes)"

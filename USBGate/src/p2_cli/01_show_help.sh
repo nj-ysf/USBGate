@@ -12,7 +12,7 @@ show_help() {
     # => le texte reste litteral (plus rapide et plus sur).
     cat <<'EOF'
 USAGE
-    sudo usbgate.sh [options] <device|auto>
+    ./usbgate1.sh [options] <device|auto>
 
 OPTIONS
     -h              Afficher cette aide
@@ -33,10 +33,10 @@ EXIT CODES
     106   Restauration refusee (pas root)
 
 EXEMPLES
-    sudo usbgate.sh auto
-    sudo usbgate.sh -f /dev/sdb1
-    sudo usbgate.sh -t -l /tmp/meslogs /dev/sdc1
-    sudo usbgate.sh -r
+    ./usbgate1.sh auto
+    ./usbgate1.sh -f /dev/sdb1
+    ./usbgate1.sh -t -l /tmp/meslogs /dev/sdc1
+    sudo ./usbgate1.sh -r
 
 USBGate v1.0 - Bash Shell Project 2026
 EOF
